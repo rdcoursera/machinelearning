@@ -1,0 +1,60 @@
+---
+title: "mlproject"
+output: html_document
+---
+```{r cache=TRUE}
+library(caret)
+library(rpart)
+library(rattle)
+library(randomForest)
+
+trainingcsv <- read.csv("pml-training.csv")
+dim(trainingcsv)
+testingcsv <- read.csv("pml-testing.csv")
+
+nz <- nearZeroVar(trainingcsv,saveMetrics = FALSE)
+newtr1 <- trainingcsv[,-nz]
+dim(newtr1)
+newtest1 <- testingcsv[,-nz]
+newtest <- newtest1[,-1:-6]
+dim(newtest)
+newtr = newtr1[,-1:-6]
+dim(newtr)
+
+# how many columns have more than 90 percent na's?
+sum(colMeans(is.na(newtr)) > .90)
+
+newtr <- newtr[,colMeans(is.na(newtr)) <= .90]
+dim(newtr)
+newtest <- newtest[,colMeans(is.na(newtest)) <= .90]
+dim(newtest)
+
+inTrain <- createDataPartition(y=newtr$classe,p=0.75, list=FALSE)
+
+training <- newtr[inTrain,]
+testing <- newtr[-inTrain,]
+dim(training)
+dim(testing)
+
+fit1 <- rpart(classe ~ ., data=training, method="class")
+fancyRpartPlot(fit1)
+pred1 <- predict(fit1, testing, type = "class")
+confusionMatrix(pred1, testing$classe)
+
+fit2 <- randomForest(classe ~. , data=training,na.action=na.omit)
+pred2 <- predict(fit2, testing, type = "class")
+confusionMatrix(pred2, testing$classe)
+
+fitControl <- trainControl(## 10-fold CV
+            method = "repeatedcv",
+            number = 10,
+            repeats = 2)
+fit3 <- train(classe ~ ., data=training,
+      method = "gbm",
+      trControl = fitControl,
+      verbose = FALSE)
+pred3 <- predict(fit3,newdata = testing)
+confusionMatrix(pred3,testing$classe)
+
+
+```

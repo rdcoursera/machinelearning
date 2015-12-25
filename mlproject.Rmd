@@ -2,15 +2,40 @@
 title: "mlproject"
 output: html_document
 ---
-```{r cache=TRUE}
+```{r}
 library(caret)
 library(rpart)
 library(rattle)
 library(randomForest)
+```
 
-trainingcsv <- read.csv("pml-training.csv")
-dim(trainingcsv)
-testingcsv <- read.csv("pml-testing.csv")
+```{r}
+trainingurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testingurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainfilename <- "pml-training.csv"
+testfilename <- "pml-testing.csv"
+```
+The following function will download the necessary data from the urls if the csv files are not in the working directory.  If the files are in the working directory it will load them from there.
+
+```{r readdata, cache=TRUE}
+readdata <- function(fileurl,localfile) {
+    if(!file.exists(fileurl)) {
+    temp <- tempfile()
+    download.file(fileurl,temp)
+    st <- read.csv(temp)
+    unlink(temp)
+  } else st <- read.csv(localfile)
+  st
+}
+
+trainingcsv <- readdata(trainingurl,trainfilename)
+testingcsv <- readdata(testingurl,testfilename)
+```
+
+```{r cache=TRUE}
+# trainingcsv <- read.csv("pml-training.csv")
+# dim(trainingcsv)
+# testingcsv <- read.csv("pml-testing.csv")
 
 nz <- nearZeroVar(trainingcsv,saveMetrics = FALSE)
 newtr1 <- trainingcsv[,-nz]
@@ -43,8 +68,10 @@ confusionMatrix(pred1, testing$classe)
 
 fit2 <- randomForest(classe ~. , data=training,na.action=na.omit)
 pred2 <- predict(fit2, testing, type = "class")
+postResample(pred2,testing$classe)
 confusionMatrix(pred2, testing$classe)
 ```
+
 ```{r cache=TRUE}
 fitControl <- trainControl(## 10-fold CV
             method = "repeatedcv",
@@ -55,10 +82,15 @@ fit3 <- train(classe ~ ., data=training,
       trControl = fitControl,
       verbose = FALSE)
 ```
+
 ```{r}
 pred3 <- predict(fit3,newdata = testing)
-postResample(pred2,testing$classe)
+
+```
+
+```{r}
+postResample(pred3,testing$classe)
+
 confusionMatrix(pred3,testing$classe)
 ```
 
-```

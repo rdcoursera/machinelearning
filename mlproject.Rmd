@@ -7,6 +7,8 @@ library(caret)
 library(rpart)
 library(rattle)
 library(randomForest)
+library(doMC)
+
 ```
 
 ```{r}
@@ -75,12 +77,17 @@ confusionMatrix(pred2, testing$classe)
 ```{r cache=TRUE}
 fitControl <- trainControl(## 10-fold CV
             method = "repeatedcv",
-            number = 5,
-            repeats = 1)
-fit3 <- train(classe ~ ., data=training,
+            number = 10,
+            repeats = 2)
+# system.time(fit3 <- train(classe ~ ., data=training,
+#       method = "gbm",
+#       trControl = fitControl,
+#       verbose = FALSE))
+registerDoMC(cores = detectCores())
+system.time(fit3 <- train(classe ~ ., data=training,
       method = "gbm",
       trControl = fitControl,
-      verbose = FALSE)
+      verbose = FALSE))
 ```
 
 ```{r}

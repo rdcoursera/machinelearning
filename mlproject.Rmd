@@ -1,17 +1,33 @@
 ---
-title: "mlproject"
+title: "Practical Machine Learning Project"
 output: html_document
 ---
-```{r}
+###Introduction
+For this project we are given a data set that includes information from activity monitoring devices.  Using this dat we are asked "to predict the manner in which they did the exercise. This is the "classe" variable in the training set." 
+
+###Background
+
+The following is a quote from the assignment details:
+
+"Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset)."
+
+##Analysis
+
+###Load packages
+
+```{r load_packages,message=FALSE}
 library(caret)
 library(rpart)
+library(rpart.plot)
 library(rattle)
 library(randomForest)
 library(doMC)
 
 ```
 
-```{r}
+###Get the input data
+Set the file variables and url's to the location of the initial data.
+```{r set_file_vars}
 trainingurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
 testingurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
 trainfilename <- "pml-training.csv"
@@ -21,7 +37,7 @@ The following function will download the necessary data from the urls if the csv
 
 ```{r readdata, cache=TRUE}
 readdata <- function(fileurl,localfile) {
-    if(!file.exists(fileurl)) {
+    if(!file.exists(localfile)) {
     temp <- tempfile()
     download.file(fileurl,temp)
     st <- read.csv(temp)
@@ -33,65 +49,120 @@ readdata <- function(fileurl,localfile) {
 trainingcsv <- readdata(trainingurl,trainfilename)
 testingcsv <- readdata(testingurl,testfilename)
 ```
+###Clean the input data
 
-```{r cache=TRUE}
-# trainingcsv <- read.csv("pml-training.csv")
-# dim(trainingcsv)
-# testingcsv <- read.csv("pml-testing.csv")
-
+Search for columns with near zero variables and remove the columns.
+```{r  rmnearvar, cache=TRUE}
 nz <- nearZeroVar(trainingcsv,saveMetrics = FALSE)
-newtr1 <- trainingcsv[,-nz]
-dim(newtr1)
-newtest1 <- testingcsv[,-nz]
-newtest <- newtest1[,-1:-6]
-dim(newtest)
-newtr = newtr1[,-1:-6]
-dim(newtr)
-
-# how many columns have more than 90 percent na's?
-sum(colMeans(is.na(newtr)) > .90)
-
-newtr <- newtr[,colMeans(is.na(newtr)) <= .90]
-dim(newtr)
-newtest <- newtest[,colMeans(is.na(newtest)) <= .90]
-dim(newtest)
-
-inTrain <- createDataPartition(y=newtr$classe,p=0.75, list=FALSE)
-
-training <- newtr[inTrain,]
-testing <- newtr[-inTrain,]
-dim(training)
-dim(testing)
-
-fit1 <- rpart(classe ~ ., data=training, method="class")
-fancyRpartPlot(fit1)
-pred1 <- predict(fit1, testing, type = "class")
-confusionMatrix(pred1, testing$classe)
-
-fit2 <- randomForest(classe ~. , data=training,na.action=na.omit)
-pred2 <- predict(fit2, testing, type = "class")
-postResample(pred2,testing$classe)
-confusionMatrix(pred2, testing$classe)
+workingtrain1 <- trainingcsv[,-nz]
+dim(workingtrain1)
+workingtest1 <- testingcsv[,-nz]
+dim(workingtest1)
+```
+Remove the first 6 columns - the first column is a unique number, the next column is a user name, the next 3 timestampes and finally a yes/no window column.  These columns are not accelerometer outputs.
+```{r rmfirst6}
+workingtest <- workingtest1[,-1:-6]
+dim(workingtest)
+workingtrain = workingtrain1[,-1:-6]
+dim(workingtrain)
 ```
 
-```{r cache=TRUE}
-fitControl <- trainControl(## 10-fold CV
+When I modelled the data filtered at this point I could only get accuracies of about 0.8.  Visually looking at the data I saw columns with many NA's.  Searched for the NA columns in the code that follows.
+```{r nacount}
+# how many columns have more than 90 percent na's?
+(nacount <- sum(colMeans(is.na(workingtrain)) > .90))
+```
+So, there are `r nacount` columns with more than 90% NA's.
+The following code removes these columns.
+```{r rmna}
+nacols <- colMeans(is.na(workingtrain)) <= .90
+
+workingtrain <- workingtrain[,nacols]
+dim(workingtrain)
+workingtest <- workingtest[,nacols]
+dim(workingtest)
+```
+
+Next the training data is partitioned for training and test.
+```{r partition_data}
+inTrain <- createDataPartition(y=workingtrain$classe,p=0.75, list=FALSE)
+
+training <- workingtrain[inTrain,]
+testing <- workingtrain[-inTrain,]
+dim(training)
+dim(testing)
+```
+
+###Model the data
+
+The strategy chosen is to develop 3 different models and compare the results, obviously choosing the best model for final submission.
+
+These are the models tried and the results:
+
+####Recursive partitioning
+```{r rpart, cache=TRUE}
+set.seed(9876)
+rpartfit <- rpart(classe ~ ., data=training, method="class")
+```
+```{r}
+rpart.plot(rpartfit)
+pred1 <- predict(rpartfit, testing, type = "class")
+```
+#####Rpart Accuracy/error rate
+The accuracy calculated on the testing partition of the input data is:
+```{r}
+rpartcompare <- pred1 == testing$classe
+(rpartaccuracy <- sum(rpartcompare)/nrow(testing))
+```
+So the error rate can be expected to be 1 - accuracy or `r (rparterr <- round((1 - rpartaccuracy),2))`.  This would lead to an predicted error on the 20 data points in the assignment test data set to be `r round((rparterr * nrow(testingcsv)),0)` if we used this model.
+
+This is supported by the confusion matrix calculation:
+```{r}
+(rpartcm <- confusionMatrix(pred1, testing$classe))
+```
+
+####Random forest
+```{r randomforest, cache=TRUE}
+(randomforestfit <- randomForest(classe ~. , data=training,na.action=na.omit))
+pred2 <- predict(randomforestfit, testing, type = "class")
+postResample(pred2,testing$classe)
+```
+```{r}
+pred1 <- predict(rpartfit, testing, type = "class")
+```
+#####Random Forest Accuracy/error rate
+The accuracy calculated on the testing partition of the input data is:
+```{r}
+rfcompare <- pred2 == testing$classe
+(rfaccuracy <- sum(rfcompare)/nrow(testing))
+```
+So the error rate can be expected to be 1 - accuracy or `r (rferr <- 1 - rfaccuracy)`.  This would lead to an predicted error on the 20 data points in the assignment test data set to be `r round((rferr * nrow(testingcsv)),0)` if we used this model.  Given this prediction, we will use this model for the assignment submission.
+
+This is supported by the confusion matrix calculation:
+```{r}
+(rfcm <- confusionMatrix(pred2, testing$classe))
+```
+A plot of the most important variables based on the gini impurity index.
+```{r, rf_variable_importance}
+varImpPlot(randomforestfit)
+```
+
+####Generalized Boosted Model
+
+```{r gbm,cache=TRUE}
+fitControl <- trainControl(
             method = "repeatedcv",
-            number = 10,
+            number = 5,
             repeats = 2)
-# system.time(fit3 <- train(classe ~ ., data=training,
-#       method = "gbm",
-#       trControl = fitControl,
-#       verbose = FALSE))
 registerDoMC(cores = detectCores())
-system.time(fit3 <- train(classe ~ ., data=training,
+system.time(gbmfit <- train(classe ~ ., data=training,
       method = "gbm",
       trControl = fitControl,
       verbose = FALSE))
 ```
 
-```{r}
-pred3 <- predict(fit3,newdata = testing)
+```{r message=FALSE}
+pred3 <- predict(gbmfit,newdata = testing)
 
 ```
 
@@ -101,3 +172,43 @@ postResample(pred3,testing$classe)
 confusionMatrix(pred3,testing$classe)
 ```
 
+###Results: Comparison of the three models
+
+The models will now be run on the given test data.  Since we do not have the absolute answer until submission, we will compare the three models to each other.  Of the three, random forest produced the highest accuracy(`r rfcm$overall['Accuracy']`).  This would result in an out of sample error of 1 - `r rfcm$overall['Accuracy']` = `r round(1 - rfcm$overall['Accuracy'],4)` or `r round(((1 - rfcm$overall['Accuracy']) * 100),2)` percent.
+
+####Classification and regression trees
+```{r}
+(rpartfinal <- predict(rpartfit,workingtest,type="class"))
+```
+####Random forest
+```{r}
+(randomforestfinal <- predict(randomforestfit,workingtest,type="class"))
+```
+####Generalized Boosted Model
+```{r}
+gbmfinal <- predict(gbmfit,workingtest)
+attributes(gbmfinal)$names <- attributes(randomforestfinal)$names
+gbmfinal
+```
+Random forest and Generalized Boosted Model have the highest accuracies (.95 and .99 respectively) and as shown in the following code snippets the predictions are equal.
+```{r}
+sum(randomforestfinal != gbmfinal)
+```
+Comparing the random forest predictions to classificaton/regression tree we get 6 differences.  If we assume the previous 2 predictions are correct that's 70 percent correct vs. the prediction of 75 percent.
+```{r}
+diffs = rpartfinal == randomforestfinal
+rpartfinal[!diffs]
+```
+
+###Function to output answer for grade submission
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  path <- "./answers"
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=file.path(path, filename),quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(randomforestfinal)
+```
